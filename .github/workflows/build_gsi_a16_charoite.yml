@@ -1,0 +1,105 @@
+name: Build Charoite GSI
+
+on:
+  workflow_dispatch:
+    inputs:
+      firmware_url:
+        description: 'Прямая ссылка на прошивку (.img.xz)'
+        required: true
+        default: 'https://github.com/Doze-off/AyakaUI_GSI/releases/download/2026-08-16/AyakaUI-16.2-GSI_treble_arm64-ab-GAPPS-20260816.img.xz'
+      md_file_url:
+        description: 'Прямая ссылка на .md файл (инструкция)'
+        required: true
+        default: 'https://raw.githubusercontent.com/Doze-off/AyakaUI_GSI/main/README.md'
+
+permissions:
+  contents: write # Обязательно для создания релизов
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 1. Установка зависимостей
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xz-utils rclone wget
+
+      - name: 2. Скачивание статических файлов (product и boot)
+        run: |
+          wget -q https://github.com/magic4n/BootFox/raw/refs/heads/main/catalog/charoite/repacked_3.0.302/product.tar.xz
+          wget -q https://github.com/magic4n/BootFox/raw/refs/heads/main/catalog/charoite/repacked_3.0.302/boot_ap.img
+
+      - name: 3. Скачивание и распаковка прошивки
+        run: |
+          wget -q -O firmware.img.xz "${{ github.event.inputs.firmware_url }}"
+          unxz -T0 firmware.img.xz
+          
+      - name: 4. Скачивание .md файла
+        run: |
+          wget -q -O INSTALL.md "${{ github.event.inputs.md_file_url }}"
+
+      - name: 5. Создание структуры и раскладывание файлов
+        run: |
+          mkdir -p build/system build/boot_ap build/product
+          
+          # Перемещаем и переименовываем
+          mv firmware.img build/system/system.img
+          mv boot_ap.img build/boot_ap/
+          mv INSTALL.md build/
+          
+          # Распаковываем product.tar.xz и ищем product.img
+          tar -xf product.tar.xz
+          mv $(find . -name "product.img" | head -n 1) build/product/
+
+      - name: 6. Упаковка и рандомизация имени
+        run: |
+          cd build
+          tar -cJf ../build.tar.xz .
+          cd ..
+          
+          # Генерируем случайную строку (8 символов) и добавляем суффикс
+          RANDOM_STR=$(openssl rand -hex 4)
+          FINAL_NAME="GSI-${RANDOM_STR}-charoite.tar.xz"
+          mv build.tar.xz "$FINAL_NAME"
+          
+          # Сохраняем имя и тег для следующих шагов
+          echo "ARCHIVE_NAME=$FINAL_NAME" >> $GITHUB_ENV
+          echo "RELEASE_TAG=${RANDOM_STR}-charoite" >> $GITHUB_ENV
+
+      - name: 7. Настройка rclone
+        run: |
+          mkdir -p ~/.config/rclone
+          # Декодируем base64 из секретов/переменных
+          echo "${{ secrets.RCLONE_CONFIG_BASE64 }}" | base64 -d > ~/.config/rclone/rclone.conf
+
+      - name: 8. Загрузка на Google Drive
+        run: |
+          # Замените gdrive:GSI на вашу папку
+          rclone copy "${{ env.ARCHIVE_NAME }}" "gdrive:GSI/"
+
+      - name: 9. Загрузка в Артефакты GitHub
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ARCHIVE_NAME }}
+          path: ${{ env.ARCHIVE_NAME }}
+          retention-days: 5
+
+      - name: 10. Создание релиза и загрузка
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.ARCHIVE_NAME }}
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: "Charoite GSI ${{ env.RELEASE_TAG }}"
+          body: |
+            Автоматическая сборка GSI (Charoite).
+            - Исходная прошивка: ${{ github.event.inputs.firmware_url }}
+            - Инструкция: [INSTALL.md](https://github.com/${{ github.repository }}/blob/${{ env.RELEASE_TAG }}/INSTALL.md)
+          draft: false
+          prerelease: false
+
+      - name: 11. Вывод итога
+        run: |
+          echo "### ✅ Сборка успешно завершена!" >> $GITHUB_STEP_SUMMARY
+          echo "**Файл:** \`${{ env.ARCHIVE_NAME }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Тег:** \`${{ env.RELEASE_TAG }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Размер:** $(ls -lh ${{ env.ARCHIVE_NAME }} | awk '{print $5}')" >> $GITHUB_STEP_SUMMARY
