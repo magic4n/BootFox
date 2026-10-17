@@ -75,7 +75,7 @@ jobs:
       - name: 8. Загрузка на Google Drive
         run: |
           # Замените gdrive:GSI на вашу папку
-          rclone copy "${{ env.ARCHIVE_NAME }}" "gdrive:GSI/"
+          rclone copy "${{ env.ARCHIVE_NAME }}" "24:GSI/"
 
       - name: 9. Загрузка в Артефакты GitHub
         uses: actions/upload-artifact@v4
