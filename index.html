@@ -1,0 +1,652 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BootFox Studio</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                    },
+                    animation: {
+                        'float': 'float 7s ease-in-out infinite',
+                        'spin-slow': 'spin 24s linear infinite',
+                        'shimmer': 'shimmer 3s linear infinite',
+                    },
+                    keyframes: {
+                        float: {
+                            '0%, 100%': { transform: 'translateY(0px)' },
+                            '50%': { transform: 'translateY(-8px)' },
+                        },
+                        shimmer: {
+                            '0%': { backgroundPosition: '-200% 0' },
+                            '100%': { backgroundPosition: '200% 0' },
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        :root {
+            --cursor-x: 50vw;
+            --cursor-y: 50vh;
+        }
+
+        body {
+            background-color: #FFFFFF;
+            color: #0F172A;
+            overflow-x: hidden;
+        }
+
+        ::selection {
+            background: #FF4D00;
+            color: #FFFFFF;
+        }
+
+        /* Subtle Ambient Cursor Aura */
+        .ambient-aura {
+            background: radial-gradient(
+                550px circle at var(--cursor-x) var(--cursor-y),
+                rgba(255, 184, 0, 0.10),
+                rgba(230, 0, 35, 0.04) 45%,
+                transparent 80%
+            );
+        }
+
+        /* Signature Yellow-Red-White Gradients */
+        .bg-fox-gradient {
+            background: linear-gradient(135deg, #FFB800 0%, #FF4D00 52%, #E60023 100%);
+        }
+
+        .text-fox-gradient {
+            background: linear-gradient(135deg, #FFB800 0%, #FF3D00 50%, #E60023 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        /* OrangeFox Slider Shimmer */
+        .ofox-shimmer {
+            background: linear-gradient(90deg, rgba(15,23,42,0.35) 0%, rgba(255,69,0,0.95) 50%, rgba(15,23,42,0.35) 100%);
+            background-size: 200% auto;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            animation: shimmer 3.2s linear infinite;
+        }
+
+        /* 3D Subtle Tilt */
+        .tilt-surface {
+            transform-style: preserve-3d;
+            transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.25s ease, border-color 0.25s ease;
+        }
+
+        /* Minimalist Pill Active State */
+        .rom-pill.active {
+            background: linear-gradient(135deg, #FFB800 0%, #FF4D00 52%, #E60023 100%);
+            color: #FFFFFF;
+            border-color: transparent;
+            box-shadow: 0 10px 25px -5px rgba(255, 77, 0, 0.3);
+        }
+        .rom-pill.active svg {
+            color: #FFFFFF;
+        }
+    </style>
+</head>
+<body class="relative min-h-screen flex flex-col justify-between antialiased">
+
+    <!-- Interactive Cursor Glow -->
+    <div class="ambient-aura fixed inset-0 pointer-events-none z-0"></div>
+
+    <!-- Minimal Toast Container -->
+    <div id="toast-container" class="fixed bottom-6 right-6 z-50 flex flex-col gap-2 pointer-events-none"></div>
+
+    <header class="sticky top-6 z-40 mx-auto w-full max-w-4xl px-4">
+        <nav class="flex items-center justify-between px-4 py-2.5 rounded-2xl bg-white/85 backdrop-blur-xl border border-orange-500/15 shadow-[0_4px_24px_rgba(255,85,0,0.04)]">
+            <a href="#" id="brand-logo" class="group flex items-center gap-3 focus:outline-none">
+                <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-amber-50 via-white to-red-50 border border-orange-500/20 flex items-center justify-center group-hover:scale-105 transition-transform">
+                    <svg viewBox="0 0 100 100" class="w-6 h-6 overflow-visible">
+                        <defs>
+                            <linearGradient id="navFoxGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                                <stop offset="0%" stop-color="#FFB800" />
+                                <stop offset="50%" stop-color="#FF4500" />
+                                <stop offset="100%" stop-color="#E60023" />
+                            </linearGradient>
+                        </defs>
+                        <polygon points="16,44 22,10 46,32" fill="url(#navFoxGrad)" class="origin-bottom transition-transform duration-300 group-hover:-rotate-6" />
+                        <polygon points="84,44 78,10 54,32" fill="url(#navFoxGrad)" class="origin-bottom transition-transform duration-300 group-hover:rotate-6" />
+                        <polygon points="12,44 50,26 88,44 74,76 50,94 26,76" fill="url(#navFoxGrad)" />
+                        <polygon points="12,44 34,62 26,76" fill="#FFFFFF" opacity="0.9" />
+                        <polygon points="88,44 66,62 74,76" fill="#FFFFFF" opacity="0.9" />
+                        <polygon points="29,50 43,55 33,59" fill="#FFFFFF" />
+                        <polygon points="71,50 57,55 67,59" fill="#FFFFFF" />
+                    </svg>
+                </div>
+                <span class="font-bold tracking-tight text-sm text-slate-900">BootFox Studio</span>
+            </a>
+
+            <div class="flex items-center gap-1.5 sm:gap-2">
+                <a href="https://boot.luna-app.space/catalog/" target="_blank" rel="noopener noreferrer"
+                   class="px-3 py-1.5 rounded-xl text-xs font-medium text-slate-600 hover:text-orange-600 hover:bg-amber-50/60 transition-colors">
+                    Catalog
+                </a>
+                <a href="https://flasher.luna-app.space" target="_blank" rel="noopener noreferrer"
+                   class="px-3 py-1.5 rounded-xl text-xs font-medium text-slate-600 hover:text-red-600 hover:bg-red-50/60 transition-colors">
+                    Flasher
+                </a>
+                <a href="https://github.com/magic4n/BootFox" target="_blank" rel="noopener noreferrer"
+                   class="px-3 py-1.5 rounded-xl text-xs font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition-colors">
+                    GitHub
+                </a>
+                <button id="sound-toggle" class="p-2 rounded-xl text-orange-600 hover:bg-amber-50 transition-colors" title="Toggle UI Sound">
+                    <svg id="sound-on" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M15.536 8.464a5 5 0 010 7.072M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                    </svg>
+                    <svg id="sound-off" class="w-4 h-4 hidden" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15zM17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />
+                    </svg>
+                </button>
+            </div>
+        </nav>
+    </header>
+
+    <main class="relative z-10 mx-auto w-full max-w-4xl px-4 py-14 sm:py-20 space-y-20">
+
+        <!-- 1. HERO -->
+        <section class="flex flex-col items-center text-center space-y-8">
+            <!-- Interactive Geometric Fox Emblem -->
+            <div id="fox-core-trigger" class="tilt-surface relative w-36 h-36 sm:w-40 sm:h-40 rounded-3xl bg-gradient-to-br from-amber-50/70 via-white to-red-50/70 border border-orange-500/20 shadow-[0_16px_40px_rgba(255,85,0,0.08)] flex items-center justify-center cursor-pointer group select-none" title="Click to pulse Fox Core">
+                <!-- Orbiting Minimal Ring -->
+                <svg class="w-32 h-32 animate-spin-slow opacity-35 absolute" viewBox="0 0 200 200">
+                    <circle cx="100" cy="100" r="86" fill="none" stroke="url(#heroGrad)" stroke-width="2" stroke-dasharray="10 14" />
+                </svg>
+
+                <!-- Main Vector Fox -->
+                <svg id="hero-fox-svg" viewBox="0 0 200 200" class="w-24 h-24 sm:w-28 sm:h-28 animate-float transition-transform duration-300 group-hover:scale-110">
+                    <defs>
+                        <linearGradient id="heroGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                            <stop offset="0%" stop-color="#FFB800" />
+                            <stop offset="50%" stop-color="#FF4D00" />
+                            <stop offset="100%" stop-color="#E60023" />
+                        </linearGradient>
+                        <linearGradient id="heroEar" x1="0%" y1="100%" x2="100%" y2="0%">
+                            <stop offset="0%" stop-color="#C8001E" />
+                            <stop offset="100%" stop-color="#FF8800" />
+                        </linearGradient>
+                    </defs>
+                    <polygon id="ear-l" points="36,88 44,22 92,64" fill="url(#heroEar)" class="origin-bottom transition-transform duration-300" />
+                    <polygon id="ear-r" points="164,88 156,22 108,64" fill="url(#heroEar)" class="origin-bottom transition-transform duration-300" />
+                    <polygon points="48,78 52,38 80,64" fill="#FFFFFF" opacity="0.9" />
+                    <polygon points="152,78 148,38 120,64" fill="#FFFFFF" opacity="0.9" />
+                    <polygon points="36,88 100,54 164,88 100,118" fill="url(#heroGrad)" />
+                    <polygon points="36,88 72,124 52,150" fill="#FFFFFF" opacity="0.92" />
+                    <polygon points="164,88 128,124 148,150" fill="#FFFFFF" opacity="0.92" />
+                    <polygon points="72,124 100,54 128,124 100,182" fill="url(#heroGrad)" />
+                    <polygon points="58,98 86,108 66,115" fill="#FFFFFF" />
+                    <polygon points="142,98 114,108 134,115" fill="#FFFFFF" />
+                    <polygon points="92,168 108,168 100,182" fill="#FFFFFF" />
+                </svg>
+
+                <!-- Core Frequency Pill -->
+                <span id="core-mode-pill" class="absolute -bottom-2.5 px-2.5 py-0.5 rounded-full bg-white border border-orange-500/25 text-[10px] font-mono font-semibold text-orange-600 shadow-sm">
+                    BALANCED
+                </span>
+            </div>
+
+            <div class="space-y-3 max-w-xl">
+                <h1 class="text-4xl sm:text-5xl font-extrabold tracking-tight text-slate-900">
+                    Custom Firmware, <span class="text-fox-gradient">Refined.</span>
+                </h1>
+                <p class="text-sm sm:text-base text-slate-500 leading-relaxed">
+                    BootFox Studio creates and ports pure AOSP and flagship OEM systems with surgical precision.
+                </p>
+            </div>
+
+            <!-- Strict Primary Actions: Only Catalog & GitHub for downloads + Web Flasher -->
+            <div class="flex flex-wrap items-center justify-center gap-3">
+                <a href="https://boot.luna-app.space/catalog/" target="_blank" rel="noopener noreferrer"
+                   class="group inline-flex items-center gap-2.5 px-5 py-3 rounded-2xl bg-fox-gradient text-white text-xs sm:text-sm font-semibold shadow-lg shadow-orange-500/20 hover:shadow-red-500/30 hover:-translate-y-0.5 transition-all">
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                    </svg>
+                    <span>Download from Catalog</span>
+                </a>
+
+                <a href="https://github.com/magic4n/BootFox" target="_blank" rel="noopener noreferrer"
+                   class="group inline-flex items-center gap-2.5 px-5 py-3 rounded-2xl bg-white hover:bg-amber-50/50 text-slate-800 text-xs sm:text-sm font-semibold border border-orange-500/25 shadow-sm hover:-translate-y-0.5 transition-all">
+                    <svg class="w-4 h-4 text-orange-600" fill="currentColor" viewBox="0 0 24 24">
+                        <path fill-rule="evenodd" clip-rule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" />
+                    </svg>
+                    <span>Download from GitHub</span>
+                </a>
+
+                <a href="https://flasher.luna-app.space" target="_blank" rel="noopener noreferrer"
+                   class="inline-flex items-center gap-2 px-4 py-3 rounded-2xl text-xs sm:text-sm font-medium text-slate-500 hover:text-orange-600 transition-colors">
+                    <svg class="w-4 h-4 text-orange-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                    </svg>
+                    <span>Web Flasher</span>
+                </a>
+            </div>
+        </section>
+
+        <!-- 2. MINIMALIST INTERACTIVE ROM DOCK (No version numbers, custom SVG icons only) -->
+        <section class="space-y-5">
+            <div class="flex items-center justify-between px-1">
+                <span class="text-xs font-mono uppercase tracking-wider text-slate-400">Crafted &amp; Ported Ecosystems</span>
+                <span id="active-rom-tag" class="text-xs font-mono font-semibold text-orange-600">Pure AOSP</span>
+            </div>
+
+            <!-- Interactive Pill Selector -->
+            <div id="rom-pills" class="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                <!-- Populated via JS with custom SVG icons -->
+            </div>
+
+            <!-- Minimalist Active ROM Preview Bar -->
+            <div class="tilt-surface rounded-2xl p-5 bg-gradient-to-r from-amber-50/50 via-white to-red-50/50 border border-orange-500/20 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                <div class="flex items-center gap-3.5">
+                    <div id="preview-icon-box" class="w-11 h-11 rounded-xl bg-white border border-orange-500/20 flex items-center justify-center text-orange-600 shadow-sm shrink-0">
+                        <!-- Dynamic SVG Icon -->
+                    </div>
+                    <div>
+                        <h2 id="preview-rom-name" class="text-base font-bold text-slate-900">LineageOS</h2>
+                        <p id="preview-rom-desc" class="text-xs text-slate-500">Clean, lightweight daily driver engineered for stability and endurance.</p>
+                    </div>
+                </div>
+
+                <div class="flex items-center gap-2 w-full sm:w-auto justify-end shrink-0">
+                    <a href="https://boot.luna-app.space/catalog/" target="_blank" rel="noopener noreferrer"
+                       class="px-3.5 py-2 rounded-xl bg-fox-gradient text-white text-xs font-semibold shadow-sm hover:opacity-95 transition-opacity">
+                        Catalog ↗
+                    </a>
+                    <a href="https://github.com/magic4n/BootFox" target="_blank" rel="noopener noreferrer"
+                       class="px-3.5 py-2 rounded-xl bg-white hover:bg-amber-50 text-slate-700 border border-orange-500/20 text-xs font-semibold transition-colors">
+                        GitHub ↗
+                    </a>
+                </div>
+            </div>
+        </section>
+
+        <!-- 3. MINIMALIST ORANGEFOX SWIPE SLIDER -->
+        <section class="space-y-3">
+            <div class="rounded-3xl p-6 sm:p-8 bg-gradient-to-br from-amber-50/60 via-white to-red-50/60 border border-orange-500/20 shadow-[0_12px_36px_rgba(255,85,0,0.05)]">
+                <div class="flex items-center justify-between mb-5">
+                    <div class="flex items-center gap-3">
+                        <div class="w-9 h-9 rounded-xl bg-fox-gradient text-white flex items-center justify-center shadow-sm">
+                            <!-- Custom Recovery Shield SVG Icon -->
+                            <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                            </svg>
+                        </div>
+                        <div>
+                            <h3 class="text-sm font-bold text-slate-900">OrangeFox Recovery Slider</h3>
+                            <p id="ofox-status" class="text-xs font-mono text-slate-400">Swipe right to unlock github.com/magic4n/BootFox</p>
+                        </div>
+                    </div>
+                    <span id="ofox-pct" class="text-xs font-mono font-semibold text-orange-600">0%</span>
+                </div>
+
+                <!-- Track -->
+                <div id="ofox-track" class="relative h-14 rounded-2xl bg-white border border-orange-500/25 p-1.5 select-none overflow-hidden shadow-inner">
+                    <div id="ofox-fill" class="absolute inset-y-0 left-0 w-0 bg-gradient-to-r from-amber-400/25 via-orange-500/25 to-red-600/30 pointer-events-none"></div>
+
+                    <div id="ofox-label" class="absolute inset-0 flex items-center justify-center pointer-events-none px-12 text-center">
+                        <span class="font-mono text-xs font-semibold tracking-wider uppercase ofox-shimmer">
+                            Swipe to Open GitHub &gt;&gt;&gt;
+                        </span>
+                    </div>
+
+                    <div id="ofox-thumb" role="slider" tabindex="0" aria-label="Swipe to open GitHub"
+                         class="relative z-10 w-12 h-full rounded-xl bg-fox-gradient text-white flex items-center justify-center cursor-grab active:cursor-grabbing shadow-md shadow-orange-500/30 focus:outline-none">
+                        <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.4">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M13 5l7 7-7 7M5 5l7 7-7 7" />
+                        </svg>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 4. THREE MINIMALIST PORTAL CARDS -->
+        <section class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <!-- ROM Catalog -->
+            <a href="https://boot.luna-app.space/catalog/" target="_blank" rel="noopener noreferrer"
+               class="tilt-surface group rounded-2xl p-5 bg-white border border-orange-500/15 hover:border-orange-500/40 shadow-sm flex flex-col justify-between gap-4">
+                <div class="flex items-center justify-between">
+                    <div class="w-9 h-9 rounded-xl bg-amber-50 text-orange-600 flex items-center justify-center group-hover:scale-105 transition-transform">
+                        <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                        </svg>
+                    </div>
+                    <span class="text-xs font-mono text-slate-400 group-hover:text-orange-600 transition-colors">↗</span>
+                </div>
+                <div>
+                    <h3 class="text-sm font-bold text-slate-900">ROM Catalog</h3>
+                    <p class="text-xs text-slate-500 mt-0.5 font-mono">boot.luna-app.space/catalog/</p>
+                </div>
+            </a>
+
+            <!-- Web Flasher -->
+            <a href="https://flasher.luna-app.space" target="_blank" rel="noopener noreferrer"
+               class="tilt-surface group rounded-2xl p-5 bg-white border border-orange-500/15 hover:border-orange-500/40 shadow-sm flex flex-col justify-between gap-4">
+                <div class="flex items-center justify-between">
+                    <div class="w-9 h-9 rounded-xl bg-red-50 text-red-600 flex items-center justify-center group-hover:scale-105 transition-transform">
+                        <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                        </svg>
+                    </div>
+                    <span class="text-xs font-mono text-slate-400 group-hover:text-red-600 transition-colors">↗</span>
+                </div>
+                <div>
+                    <h3 class="text-sm font-bold text-slate-900">Web Flasher</h3>
+                    <p class="text-xs text-slate-500 mt-0.5 font-mono">flasher.luna-app.space</p>
+                </div>
+            </a>
+
+            <!-- GitHub Source -->
+            <a href="https://github.com/magic4n/BootFox" target="_blank" rel="noopener noreferrer"
+               class="tilt-surface group rounded-2xl p-5 bg-white border border-orange-500/15 hover:border-orange-500/40 shadow-sm flex flex-col justify-between gap-4">
+                <div class="flex items-center justify-between">
+                    <div class="w-9 h-9 rounded-xl bg-orange-50 text-orange-600 flex items-center justify-center group-hover:scale-105 transition-transform">
+                        <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                            <path fill-rule="evenodd" clip-rule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" />
+                        </svg>
+                    </div>
+                    <span class="text-xs font-mono text-slate-400 group-hover:text-orange-600 transition-colors">↗</span>
+                </div>
+                <div>
+                    <h3 class="text-sm font-bold text-slate-900">GitHub</h3>
+                    <p class="text-xs text-slate-500 mt-0.5 font-mono">github.com/magic4n/BootFox</p>
+                </div>
+            </a>
+        </section>
+
+    </main>
+
+    <!-- Minimalist Footer -->
+    <footer class="relative z-10 border-t border-orange-500/10 py-6 px-4">
+        <div class="mx-auto max-w-4xl flex items-center justify-between text-xs text-slate-400">
+            <div class="flex items-center gap-2">
+                <svg viewBox="0 0 100 100" class="w-4 h-4">
+                    <polygon points="12,44 50,26 88,44 74,76 50,94 26,76" fill="url(#navFoxGrad)" />
+                </svg>
+                <span class="font-medium text-slate-600">BootFox Studio</span>
+            </div>
+            <div class="flex items-center gap-4 font-mono">
+                <a href="https://boot.luna-app.space/catalog/" target="_blank" rel="noopener noreferrer" class="hover:text-orange-600 transition-colors">Catalog</a>
+                <a href="https://flasher.luna-app.space" target="_blank" rel="noopener noreferrer" class="hover:text-red-600 transition-colors">Flasher</a>
+                <a href="https://github.com/magic4n/BootFox" target="_blank" rel="noopener noreferrer" class="hover:text-slate-800 transition-colors">GitHub</a>
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        /* 1. SUBTLE WEB AUDIO SYNTH */
+        let soundOn = true;
+        let audioCtx = null;
+
+        function playClick(freq = 540, endFreq = 720, duration = 0.05) {
+            if (!soundOn) return;
+            try {
+                if (!audioCtx) {
+                    const AudioContext = window.AudioContext || window.webkitAudioContext;
+                    if (AudioContext) audioCtx = new AudioContext();
+                }
+                if (audioCtx.state === 'suspended') audioCtx.resume();
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(endFreq, audioCtx.currentTime + duration);
+                gain.gain.setValueAtTime(0.04, audioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start();
+                osc.stop(audioCtx.currentTime + duration);
+            } catch (e) {}
+        }
+
+        function showToast(text) {
+            const container = document.getElementById('toast-container');
+            const el = document.createElement('div');
+            el.className = 'px-3.5 py-2 rounded-xl bg-white border border-orange-500/25 shadow-lg text-xs font-mono font-medium text-slate-800 transition-all duration-300 opacity-0 translate-y-2';
+            el.textContent = text;
+            container.appendChild(el);
+            requestAnimationFrame(() => el.classList.remove('opacity-0', 'translate-y-2'));
+            setTimeout(() => {
+                el.classList.add('opacity-0', 'translate-y-2');
+                setTimeout(() => el.remove(), 300);
+            }, 2200);
+        }
+
+        document.getElementById('sound-toggle').addEventListener('click', () => {
+            soundOn = !soundOn;
+            document.getElementById('sound-on').classList.toggle('hidden', !soundOn);
+            document.getElementById('sound-off').classList.toggle('hidden', soundOn);
+            if (soundOn) playClick(600, 880);
+            showToast(soundOn ? 'Sound enabled' : 'Sound muted');
+        });
+
+        /* 2. CUSTOM SVG ROM ECOSYSTEM DOCK (NO NUMBERS, NO LETTER BADGES) */
+        const ROMS = [
+            {
+                name: 'LineageOS',
+                tag: 'Pure AOSP',
+                desc: 'Clean, lightweight daily driver engineered for stability and endurance.',
+                svg: `<svg class="w-4 h-4 text-orange-500 transition-colors" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><circle cx="6" cy="15" r="2"/><circle cx="18" cy="15" r="2"/><path d="M8 14l2-1m4 0l2 1"/></svg>`
+            },
+            {
+                name: 'LunarisAOSP',
+                tag: 'Studio Flagship',
+                desc: 'BootFox signature distribution crafted for fluid UI rendering and deep efficiency.',
+                svg: `<svg class="w-4 h-4 text-orange-500 transition-colors" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>`
+            },
+            {
+                name: 'HyperOS',
+                tag: 'OEM Port',
+                desc: 'Debloated flagship port featuring smooth system animations and camera tuning.',
+                svg: `<svg class="w-4 h-4 text-orange-500 transition-colors" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>`
+            },
+            {
+                name: 'PixelOS',
+                tag: 'Pixel Experience',
+                desc: 'Authentic flagship experience with seamless system integration out of the box.',
+                svg: `<svg class="w-4 h-4 text-orange-500 transition-colors" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l1.9 5.8a2 2 0 001.3 1.3L21 12l-5.8 1.9a2 2 0 00-1.3 1.3L12 21l-1.9-5.8a2 2 0 00-1.3-1.3L3 12l5.8-1.9a2 2 0 001.3-1.3L12 3z"/></svg>`
+            },
+            {
+                name: 'crDroid',
+                tag: 'Performance',
+                desc: 'Deep system customization paired with high-framerate gaming unlocks.',
+                svg: `<svg class="w-4 h-4 text-orange-500 transition-colors" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 1v3m6-3v3M9 20v3m6-3v3M20 9h3m-3 6h3M1 9h3m-3 6h3"/></svg>`
+            },
+            {
+                name: 'ColorOS',
+                tag: 'Aquamorphic Port',
+                desc: 'Fluid flagship interface port with ultra-responsive touch and haptic feedback.',
+                svg: `<svg class="w-4 h-4 text-orange-500 transition-colors" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2.69l5.66 5.66a8 8 0 11-11.31 0z"/></svg>`
+            },
+            {
+                name: 'EvolutionX',
+                tag: 'Feature Rich',
+                desc: 'Packed with lockscreen customization, status bar tweaks, and performance profiles.',
+                svg: `<svg class="w-4 h-4 text-orange-500 transition-colors" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>`
+            },
+            {
+                name: 'InfinityOS',
+                tag: 'Minimalist',
+                desc: 'Distraction-free firmware engineered for raw speed and minimal memory overhead.',
+                svg: `<svg class="w-4 h-4 text-orange-500 transition-colors" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18.178 8c5.096 0 5.096 8 0 8-5.095 0-7.133-8-12.739-8-4.585 0-4.585 8 0 8 5.606 0 7.644-8 12.74-8z"/></svg>`
+            }
+        ];
+
+        const pillsContainer = document.getElementById('rom-pills');
+        let activeRomIndex = 0;
+
+        function renderRomDock() {
+            pillsContainer.innerHTML = '';
+            ROMS.forEach((rom, idx) => {
+                const btn = document.createElement('button');
+                btn.className = `rom-pill flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl border border-orange-500/15 bg-white hover:border-orange-500/40 text-xs font-semibold text-slate-700 transition-all ${idx === activeRomIndex ? 'active' : ''}`;
+                btn.innerHTML = `${rom.svg}<span class="truncate">${rom.name}</span>`;
+                btn.addEventListener('click', () => {
+                    activeRomIndex = idx;
+                    playClick(500 + idx * 35, 700 + idx * 35);
+                    renderRomDock();
+                    updateRomPreview();
+                });
+                pillsContainer.appendChild(btn);
+            });
+        }
+
+        function updateRomPreview() {
+            const rom = ROMS[activeRomIndex];
+            document.getElementById('active-rom-tag').textContent = rom.tag;
+            document.getElementById('preview-rom-name').textContent = rom.name;
+            document.getElementById('preview-rom-desc').textContent = rom.desc;
+            document.getElementById('preview-icon-box').innerHTML = rom.svg.replace('w-4 h-4', 'w-5 h-5');
+        }
+
+        /* 3. INTERACTIVE HERO FOX CORE */
+        const modes = ['BALANCED', 'PERFORMANCE', 'GAMING', 'OVERCLOCKED'];
+        let modeIdx = 0;
+
+        document.getElementById('fox-core-trigger').addEventListener('click', () => {
+            modeIdx = (modeIdx + 1) % modes.length;
+            document.getElementById('core-mode-pill').textContent = modes[modeIdx];
+            const earL = document.getElementById('ear-l');
+            const earR = document.getElementById('ear-r');
+            earL.style.transform = 'rotate(-10deg)';
+            earR.style.transform = 'rotate(10deg)';
+            setTimeout(() => {
+                earL.style.transform = '';
+                earR.style.transform = '';
+            }, 260);
+            playClick(460 + modeIdx * 110, 740 + modeIdx * 110);
+            showToast(`Core Profile: ${modes[modeIdx]}`);
+        });
+
+        /* 4. ORANGEFOX RECOVERY SWIPE SLIDER */
+        const track = document.getElementById('ofox-track');
+        const thumb = document.getElementById('ofox-thumb');
+        const fill = document.getElementById('ofox-fill');
+        const pctEl = document.getElementById('ofox-pct');
+        const statusEl = document.getElementById('ofox-status');
+        const labelEl = document.getElementById('ofox-label');
+
+        let dragging = false;
+        let startX = 0;
+        let curX = 0;
+        let unlocked = false;
+
+        function maxSlide() {
+            return track.clientWidth - thumb.clientWidth - 12;
+        }
+
+        function setSlide(x) {
+            const max = maxSlide();
+            const clamped = Math.max(0, Math.min(x, max));
+            const ratio = max > 0 ? clamped / max : 0;
+            const pct = Math.round(ratio * 100);
+
+            thumb.style.transform = `translateX(${clamped}px)`;
+            fill.style.width = `${clamped + thumb.clientWidth / 2}px`;
+            pctEl.textContent = `${pct}%`;
+            labelEl.style.opacity = Math.max(0.15, 1 - ratio);
+
+            if (pct >= 94 && !unlocked) {
+                unlocked = true;
+                dragging = false;
+                thumb.style.transform = `translateX(${max}px)`;
+                fill.style.width = '100%';
+                pctEl.textContent = '100%';
+                statusEl.textContent = 'Mounted! Opening github.com/magic4n/BootFox...';
+                playClick(587, 880, 0.12);
+                showToast('Opening GitHub...');
+                window.open('https://github.com/magic4n/BootFox', '_blank', 'noopener,noreferrer');
+
+                setTimeout(() => {
+                    unlocked = false;
+                    statusEl.textContent = 'Swipe right to unlock github.com/magic4n/BootFox';
+                    thumb.style.transition = 'transform 0.35s ease';
+                    fill.style.transition = 'width 0.35s ease';
+                    setSlide(0);
+                    setTimeout(() => {
+                        thumb.style.transition = '';
+                        fill.style.transition = '';
+                    }, 360);
+                }, 1800);
+            }
+        }
+
+        thumb.addEventListener('mousedown', (e) => {
+            if (unlocked) return;
+            dragging = true;
+            startX = e.clientX - curX;
+            playClick(380, 440);
+        });
+        window.addEventListener('mousemove', (e) => {
+            document.documentElement.style.setProperty('--cursor-x', `${e.clientX}px`);
+            document.documentElement.style.setProperty('--cursor-y', `${e.clientY}px`);
+            if (!dragging || unlocked) return;
+            curX = e.clientX - startX;
+            setSlide(curX);
+        });
+        window.addEventListener('mouseup', () => {
+            if (!dragging || unlocked) return;
+            dragging = false;
+            curX = 0;
+            thumb.style.transition = 'transform 0.3s ease';
+            fill.style.transition = 'width 0.3s ease';
+            setSlide(0);
+            setTimeout(() => {
+                thumb.style.transition = '';
+                fill.style.transition = '';
+            }, 310);
+        });
+
+        thumb.addEventListener('touchstart', (e) => {
+            if (unlocked || !e.touches.length) return;
+            dragging = true;
+            startX = e.touches[0].clientX - curX;
+        }, { passive: true });
+        window.addEventListener('touchmove', (e) => {
+            if (!dragging || unlocked || !e.touches.length) return;
+            curX = e.touches[0].clientX - startX;
+            setSlide(curX);
+        }, { passive: true });
+        window.addEventListener('touchend', () => {
+            if (!dragging || unlocked) return;
+            dragging = false;
+            curX = 0;
+            setSlide(0);
+        });
+
+        /* 5. SUBTLE 3D TILT SURFACES */
+        document.querySelectorAll('.tilt-surface').forEach(el => {
+            el.addEventListener('mousemove', (e) => {
+                const r = el.getBoundingClientRect();
+                const rx = ((e.clientY - r.top - r.height / 2) / (r.height / 2)) * -3;
+                const ry = ((e.clientX - r.left - r.width / 2) / (r.width / 2)) * 3;
+                el.style.transform = `perspective(800px) rotateX(${rx}deg) rotateY(${ry}deg)`;
+            });
+            el.addEventListener('mouseleave', () => {
+                el.style.transform = 'perspective(800px) rotateX(0deg) rotateY(0deg)';
+            });
+        });
+
+        window.onload = () => {
+            renderRomDock();
+            updateRomPreview();
+        };
+    </script>
+</body>
+</html>
