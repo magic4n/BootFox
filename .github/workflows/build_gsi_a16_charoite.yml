@@ -1,105 +1,656 @@
-name: Build Charoite GSI
+name: Charoite GSI Builder
 
 on:
   workflow_dispatch:
     inputs:
+      mode:
+        description: "Что выполнить"
+        type: choice
+        required: true
+        default: build
+        options:
+          - build
+          - finish
+
+      rom_slug:
+        description: "Короткое имя ROM, например crdroid"
+        type: string
+        required: true
+        default: crdroid
+
+      android_version:
+        description: "Версия Android (для имени архива), например 16"
+        type: string
+        required: true
+        default: "16"
+
       firmware_url:
-        description: 'Прямая ссылка на прошивку (.img.xz)'
-        required: true
-        default: 'https://github.com/Doze-off/AyakaUI_GSI/releases/download/2026-08-16/AyakaUI-16.2-GSI_treble_arm64-ab-GAPPS-20260816.img.xz'
+        description: "Прямая ссылка на GSI .img.xz (используется в Build)"
+        type: string
+        required: false
+        default: "https://github.com/Doze-off/AyakaUI_GSI/releases/download/2026-08-16/AyakaUI-16.2-GSI_treble_arm64-ab-GAPPS-20260816.img.xz"
+
       md_file_url:
-        description: 'Прямая ссылка на .md файл (инструкция)'
-        required: true
-        default: 'https://raw.githubusercontent.com/Doze-off/AyakaUI_GSI/main/README.md'
+        description: "Прямая ссылка на INSTALL.md (используется в Build)"
+        type: string
+        required: false
+        default: "https://raw.githubusercontent.com/Doze-off/AyakaUI_GSI/main/README.md"
+
+      release_tag:
+        description: "Тег релиза для Finish (скопировать из результата Build)"
+        type: string
+        required: false
+        default: ""
+
+      rom_name:
+        description: "Полное название прошивки для Finish, например crDroid"
+        type: string
+        required: false
+        default: ""
+
+      rom_version:
+        description: "Версия ROM для Finish, например v12.12"
+        type: string
+        required: false
+        default: ""
+
+      package_type:
+        description: "Вариант сборки"
+        type: choice
+        required: false
+        default: gapps
+        options:
+          - vanilla
+          - gapps
+          - microg
+
+      android_sdk:
+        description: "Android SDK"
+        type: string
+        required: false
+        default: "36"
+
+      incremental:
+        description: "Incremental"
+        type: string
+        required: false
+        default: "unknown"
+
+      device_model:
+        description: "Полное название и модель устройства"
+        type: string
+        required: false
+        default: "REDMI Note 15 Pro 4G (25100RA69G)"
+
+      device_fingerprint:
+        description: "Device fingerprint"
+        type: string
+        required: false
+        default: "unknown"
+
+      build_fingerprint:
+        description: "Build fingerprint"
+        type: string
+        required: false
+        default: "unknown"
+
+      build_type:
+        description: "Build type"
+        type: string
+        required: false
+        default: "user"
+
+      build_tags:
+        description: "Build tags"
+        type: string
+        required: false
+        default: "release-keys"
+
+      build_id:
+        description: "Build ID (AUTO = случайный идентификатор)"
+        type: string
+        required: false
+        default: "AUTO"
 
 permissions:
-  contents: write # Обязательно для создания релизов
+  contents: write
+
+concurrency:
+  group: charoite-gsi-${{ github.event.inputs.mode }}-${{ github.run_id }}
+  cancel-in-progress: false
 
 jobs:
   build:
+    if: ${{ github.event.inputs.mode == 'build' }}
     runs-on: ubuntu-latest
+    timeout-minutes: 180
+
+    env:
+      ROM_SLUG_INPUT: ${{ github.event.inputs.rom_slug }}
+      ANDROID_VERSION: ${{ github.event.inputs.android_version }}
+      FIRMWARE_URL: ${{ github.event.inputs.firmware_url }}
+      MD_FILE_URL: ${{ github.event.inputs.md_file_url }}
+      RCLONE_CONFIG_BASE64: ${{ secrets.RCLONE_CONFIG_BASE64 }}
+
+    outputs:
+      archive_name: ${{ steps.meta.outputs.archive_name }}
+      release_tag: ${{ steps.meta.outputs.release_tag }}
+
     steps:
-      - name: 1. Установка зависимостей
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y xz-utils rclone wget
+          sudo apt-get install -y --no-install-recommends xz-utils rclone jq curl
 
-      - name: 2. Скачивание статических файлов (product и boot)
+      - name: Validate inputs and prepare names
+        id: meta
+        shell: bash
         run: |
-          wget -q https://github.com/magic4n/BootFox/raw/refs/heads/main/catalog/charoite/repacked_3.0.302/product.tar.xz
-          wget -q https://github.com/magic4n/BootFox/raw/refs/heads/main/catalog/charoite/repacked_3.0.302/boot_ap.img
+          set -euo pipefail
 
-      - name: 3. Скачивание и распаковка прошивки
+          if [[ -z "${ROM_SLUG_INPUT//[[:space:]]/}" ]]; then
+            echo "::error::ROM name cannot be empty"
+            exit 1
+          fi
+          if [[ ! "$ANDROID_VERSION" =~ ^[0-9]+$ ]]; then
+            echo "::error::Android version must contain digits only (example: 16)"
+            exit 1
+          fi
+          if [[ -z "$FIRMWARE_URL" || -z "$MD_FILE_URL" ]]; then
+            echo "::error::firmware_url and md_file_url are required in Build mode"
+            exit 1
+          fi
+
+          ROM_SLUG="$(python3 - <<'PY'
+          import os, re, unicodedata
+          value = unicodedata.normalize("NFKC", os.environ["ROM_SLUG_INPUT"]).strip().lower()
+          value = re.sub(r"[\s_]+", "-", value)
+          value = re.sub(r"[^\w.-]+", "-", value, flags=re.UNICODE)
+          value = re.sub(r"-{2,}", "-", value).strip("-.")
+          if not value:
+              raise SystemExit("ROM name becomes empty after sanitizing")
+          print(value)
+          PY
+          )"
+
+          BUILD_DATE="$(date -u +'%Y%m%d')"
+          ARCHIVE_NAME="${ROM_SLUG}-charoite-a${ANDROID_VERSION}-unofficial.tar.xz"
+          RELEASE_TAG="${ROM_SLUG}-charoite-${BUILD_DATE}-${GITHUB_RUN_NUMBER}"
+
+          echo "rom_slug=$ROM_SLUG" >> "$GITHUB_OUTPUT"
+          echo "archive_name=$ARCHIVE_NAME" >> "$GITHUB_OUTPUT"
+          echo "release_tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+          echo "ARCHIVE_NAME=$ARCHIVE_NAME" >> "$GITHUB_ENV"
+          echo "RELEASE_TAG=$RELEASE_TAG" >> "$GITHUB_ENV"
+          echo "ROM_SLUG=$ROM_SLUG" >> "$GITHUB_ENV"
+
+      - name: Download GSI and installation instructions
+        shell: bash
         run: |
-          wget -q -O firmware.img.xz "${{ github.event.inputs.firmware_url }}"
-          unxz -T0 firmware.img.xz
-          
-      - name: 4. Скачивание .md файла
+          set -euo pipefail
+          mkdir -p work/package/system work/package/fixes work/package/root
+
+          curl --fail --location --retry 5 --retry-all-errors --retry-delay 3 \
+            "$FIRMWARE_URL" -o work/firmware.img.xz
+          xz --test work/firmware.img.xz
+          xz --decompress --stdout --threads=0 work/firmware.img.xz > work/package/system/system.img
+          test -s work/package/system/system.img
+
+          curl --fail --location --retry 5 --retry-all-errors --retry-delay 3 \
+            "$MD_FILE_URL" -o work/package/INSTALL.md
+          test -s work/package/INSTALL.md
+
+      - name: Download latest Charoite Fixes (optional)
+        id: fixes
+        shell: bash
         run: |
-          wget -q -O INSTALL.md "${{ github.event.inputs.md_file_url }}"
+          set -euo pipefail
+          API="https://api.github.com/repos/magic4n/charoite-gsi-fixes/releases/latest"
+          JSON="$(curl --fail --location --retry 5 --retry-all-errors "$API")"
+          ASSET_URL="$(jq -r '[.assets[] | select(.name | test("^charoite_fixes.*\\.zip$"; "i"))] | sort_by(.created_at) | last | .browser_download_url // empty' <<< "$JSON")"
+          ASSET_NAME="$(jq -r '[.assets[] | select(.name | test("^charoite_fixes.*\\.zip$"; "i"))] | sort_by(.created_at) | last | .name // empty' <<< "$JSON")"
 
-      - name: 5. Создание структуры и раскладывание файлов
+          if [[ -z "$ASSET_URL" ]]; then
+            echo "::warning::No charoite_fixes ZIP asset found in latest stable release. Continuing without Fixes."
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          curl --fail --location --retry 5 --retry-all-errors "$ASSET_URL" \
+            -o "work/package/fixes/$ASSET_NAME"
+          echo "available=true" >> "$GITHUB_OUTPUT"
+          echo "asset_name=$ASSET_NAME" >> "$GITHUB_OUTPUT"
+          echo "release_url=$(jq -r '.html_url' <<< "$JSON")" >> "$GITHUB_OUTPUT"
+          echo "release_tag=$(jq -r '.tag_name' <<< "$JSON")" >> "$GITHUB_OUTPUT"
+
+      - name: Download latest stable APatch APK
+        shell: bash
         run: |
-          mkdir -p build/system build/boot_ap build/product
-          
-          # Перемещаем и переименовываем
-          mv firmware.img build/system/system.img
-          mv boot_ap.img build/boot_ap/
-          mv INSTALL.md build/
-          
-          # Распаковываем product.tar.xz и ищем product.img
-          tar -xf product.tar.xz
-          mv $(find . -name "product.img" | head -n 1) build/product/
+          set -euo pipefail
+          JSON="$(curl --fail --location --retry 5 --retry-all-errors \
+            https://api.github.com/repos/bmax121/APatch/releases/latest)"
+          ASSET_URL="$(jq -r '[.assets[] | select(.name | endswith(".apk"))] | sort_by(.name) | last | .browser_download_url // empty' <<< "$JSON")"
+          ASSET_NAME="$(jq -r '[.assets[] | select(.name | endswith(".apk"))] | sort_by(.name) | last | .name // empty' <<< "$JSON")"
+          [[ -n "$ASSET_URL" ]] || { echo "::error::No APK asset found in latest stable APatch release"; exit 1; }
+          curl --fail --location --retry 5 --retry-all-errors "$ASSET_URL" \
+            -o "work/package/root/$ASSET_NAME"
+          echo "APATCH_VERSION=$(jq -r '.tag_name' <<< "$JSON")" >> "$GITHUB_ENV"
+          echo "APATCH_ASSET=$ASSET_NAME" >> "$GITHUB_ENV"
 
-      - name: 6. Упаковка и рандомизация имени
+      - name: Download latest stable Magisk APK
+        shell: bash
         run: |
-          cd build
-          tar -cJf ../build.tar.xz .
-          cd ..
-          
-          # Генерируем случайную строку (8 символов) и добавляем суффикс
-          RANDOM_STR=$(openssl rand -hex 4)
-          FINAL_NAME="GSI-${RANDOM_STR}-charoite.tar.xz"
-          mv build.tar.xz "$FINAL_NAME"
-          
-          # Сохраняем имя и тег для следующих шагов
-          echo "ARCHIVE_NAME=$FINAL_NAME" >> $GITHUB_ENV
-          echo "RELEASE_TAG=${RANDOM_STR}-charoite" >> $GITHUB_ENV
+          set -euo pipefail
+          JSON="$(curl --fail --location --retry 5 --retry-all-errors \
+            https://api.github.com/repos/topjohnwu/Magisk/releases/latest)"
+          ASSET_URL="$(jq -r '[.assets[] | select(.name | test("^Magisk-.*\\.apk$"; "i"))] | first | .browser_download_url // empty' <<< "$JSON")"
+          ASSET_NAME="$(jq -r '[.assets[] | select(.name | test("^Magisk-.*\\.apk$"; "i"))] | first | .name // empty' <<< "$JSON")"
+          [[ -n "$ASSET_URL" ]] || { echo "::error::No Magisk-*.apk asset found in latest stable Magisk release"; exit 1; }
+          curl --fail --location --retry 5 --retry-all-errors "$ASSET_URL" \
+            -o "work/package/root/$ASSET_NAME"
+          echo "MAGISK_VERSION=$(jq -r '.tag_name' <<< "$JSON")" >> "$GITHUB_ENV"
+          echo "MAGISK_ASSET=$ASSET_NAME" >> "$GITHUB_ENV"
 
-      - name: 7. Настройка rclone
+      - name: Validate package contents
+        shell: bash
         run: |
-          mkdir -p ~/.config/rclone
-          # Декодируем base64 из секретов/переменных
-          echo "${{ secrets.RCLONE_CONFIG_BASE64 }}" | base64 -d > ~/.config/rclone/rclone.conf
+          set -euo pipefail
+          test -s work/package/system/system.img
+          test -s work/package/INSTALL.md
+          test -s work/package/root/"$APATCH_ASSET"
+          test -s work/package/root/"$MAGISK_ASSET"
+          echo "Package contents:"
+          find work/package -type f -printf '%P (%s bytes)\n' | sort
 
-      - name: 8. Загрузка на Google Drive
+      - name: Create compressed ROM archive
+        id: package
+        shell: bash
         run: |
-          # Замените gdrive:GSI на вашу папку
-          rclone copy "${{ env.ARCHIVE_NAME }}" "24:GSI/"
+          set -euo pipefail
+          tar --use-compress-program="xz -T0 -6" \
+            -cf "$ARCHIVE_NAME" -C work/package system fixes root INSTALL.md
+          test -s "$ARCHIVE_NAME"
 
-      - name: 9. Загрузка в Артефакты GitHub
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ env.ARCHIVE_NAME }}
-          path: ${{ env.ARCHIVE_NAME }}
-          retention-days: 5
+          ARCHIVE_SIZE_BYTES="$(stat -c '%s' "$ARCHIVE_NAME")"
+          ARCHIVE_SIZE_HUMAN="$(numfmt --to=iec-i --suffix=B "$ARCHIVE_SIZE_BYTES")"
+          MD5="$(md5sum "$ARCHIVE_NAME" | awk '{print $1}')"
+          SHA256="$(sha256sum "$ARCHIVE_NAME" | awk '{print $1}')"
 
-      - name: 10. Создание релиза и загрузка
+          echo "archive_size_bytes=$ARCHIVE_SIZE_BYTES" >> "$GITHUB_OUTPUT"
+          echo "archive_size_human=$ARCHIVE_SIZE_HUMAN" >> "$GITHUB_OUTPUT"
+          echo "md5=$MD5" >> "$GITHUB_OUTPUT"
+          echo "sha256=$SHA256" >> "$GITHUB_OUTPUT"
+          echo "ARCHIVE_SIZE_HUMAN=$ARCHIVE_SIZE_HUMAN" >> "$GITHUB_ENV"
+          echo "MD5=$MD5" >> "$GITHUB_ENV"
+          echo "SHA256=$SHA256" >> "$GITHUB_ENV"
+
+      - name: Configure rclone
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ -n "$RCLONE_CONFIG_BASE64" ]] || {
+            echo "::error::GitHub secret RCLONE_CONFIG_BASE64 is empty"
+            exit 1
+          }
+          mkdir -p "$HOME/.config/rclone"
+          printf '%s' "$RCLONE_CONFIG_BASE64" | base64 --decode > "$HOME/.config/rclone/rclone.conf"
+          chmod 600 "$HOME/.config/rclone/rclone.conf"
+          rclone listremotes | grep -Fx '24:' >/dev/null || {
+            echo "::error::rclone remote '24:' was not found in RCLONE_CONFIG_BASE64"
+            exit 1
+          }
+
+      - name: Upload archive to Google Drive
+        id: drive
+        shell: bash
+        run: |
+          set -euo pipefail
+          REMOTE_DIR="24:4pda/charoite/roms-4-g"
+          REMOTE_FILE="$REMOTE_DIR/$ARCHIVE_NAME"
+
+          rclone mkdir "$REMOTE_DIR"
+          if rclone lsf "$REMOTE_DIR" --files-only | grep -Fxq "$ARCHIVE_NAME"; then
+            echo "::error::An archive with this name already exists in Google Drive: $ARCHIVE_NAME"
+            exit 1
+          fi
+
+          rclone copyto "$ARCHIVE_NAME" "$REMOTE_FILE" --retries 5 --low-level-retries 10
+          DRIVE_URL="$(rclone link "$REMOTE_FILE")"
+          [[ -n "$DRIVE_URL" ]] || {
+            echo "::error::rclone did not return a Google Drive share URL"
+            exit 1
+          }
+          echo "drive_url=$DRIVE_URL" >> "$GITHUB_OUTPUT"
+          echo "DRIVE_URL=$DRIVE_URL" >> "$GITHUB_ENV"
+
+      - name: Prepare release metadata
+        shell: bash
+        env:
+          DRIVE_URL: ${{ steps.drive.outputs.drive_url }}
+          FIXES_AVAILABLE: ${{ steps.fixes.outputs.available }}
+          FIXES_VERSION: ${{ steps.fixes.outputs.release_tag }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, os
+          data = {
+            "archive_name": os.environ["ARCHIVE_NAME"],
+            "release_tag": os.environ["RELEASE_TAG"],
+            "drive_url": os.environ["DRIVE_URL"],
+            "md5": os.environ["MD5"],
+            "sha256": os.environ["SHA256"],
+            "archive_size_human": os.environ["ARCHIVE_SIZE_HUMAN"],
+            "apatch_version": os.environ["APATCH_VERSION"],
+            "apatch_asset": os.environ["APATCH_ASSET"],
+            "magisk_version": os.environ["MAGISK_VERSION"],
+            "magisk_asset": os.environ["MAGISK_ASSET"],
+            "fixes_available": os.environ.get("FIXES_AVAILABLE", "false"),
+            "fixes_version": os.environ.get("FIXES_VERSION", ""),
+          }
+          with open("charoite-build-meta.json", "w", encoding="utf-8") as f:
+              json.dump(data, f, ensure_ascii=False, indent=2)
+              f.write("\n")
+          PY
+
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: ${{ env.ARCHIVE_NAME }}
           tag_name: ${{ env.RELEASE_TAG }}
-          name: "Charoite GSI ${{ env.RELEASE_TAG }}"
+          name: "${{ env.ROM_SLUG }} Charoite Android ${{ env.ANDROID_VERSION }} (${{ env.RELEASE_TAG }})"
+          files: |
+            ${{ env.ARCHIVE_NAME }}
+            charoite-build-meta.json
           body: |
-            Автоматическая сборка GSI (Charoite).
-            - Исходная прошивка: ${{ github.event.inputs.firmware_url }}
-            - Инструкция: [INSTALL.md](https://github.com/${{ github.repository }}/blob/${{ env.RELEASE_TAG }}/INSTALL.md)
+            ## Charoite GSI package
+
+            Archive: `${{ env.ARCHIVE_NAME }}`
+            Google Drive: ${{ steps.drive.outputs.drive_url }}
+
+            MD5: `${{ env.MD5 }}`
+            SHA256: `${{ env.SHA256 }}`
+
+            APatch: `${{ env.APATCH_VERSION }}`
+            Magisk: `${{ env.MAGISK_VERSION }}`
+            Fixes: `${{ steps.fixes.outputs.release_tag || 'not found; build continued without Fixes' }}`
+
+            Run this workflow with mode **Finish** to publish the full ROM information and Portal page.
           draft: false
           prerelease: false
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: 11. Вывод итога
+      - name: Build summary
+        if: always()
+        shell: bash
         run: |
-          echo "### ✅ Сборка успешно завершена!" >> $GITHUB_STEP_SUMMARY
-          echo "**Файл:** \`${{ env.ARCHIVE_NAME }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "**Тег:** \`${{ env.RELEASE_TAG }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "**Размер:** $(ls -lh ${{ env.ARCHIVE_NAME }} | awk '{print $5}')" >> $GITHUB_STEP_SUMMARY
+          {
+            echo "## Charoite GSI — Build"
+            echo ""
+            echo "- **Archive:** \`${ARCHIVE_NAME:-not created}\`"
+            echo "- **Release tag:** \`${RELEASE_TAG:-not created}\`"
+            echo "- **Google Drive folder:** \`GSI/4pda/charoite/roms-4-g\`"
+            if [[ -n "${DRIVE_URL:-}" ]]; then echo "- **Google Drive:** $DRIVE_URL"; fi
+            if [[ -n "${MD5:-}" ]]; then echo "- **MD5:** \`$MD5\`"; fi
+            if [[ -n "${SHA256:-}" ]]; then echo "- **SHA256:** \`$SHA256\`"; fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  finish:
+    if: ${{ github.event.inputs.mode == 'finish' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      PORTAL_TOKEN: ${{ secrets.PORTAL_TOKEN }}
+      RELEASE_TAG: ${{ github.event.inputs.release_tag }}
+      ROM_SLUG_INPUT: ${{ github.event.inputs.rom_slug }}
+      ANDROID_VERSION: ${{ github.event.inputs.android_version }}
+      ROM_NAME: ${{ github.event.inputs.rom_name }}
+      ROM_VERSION: ${{ github.event.inputs.rom_version }}
+      PACKAGE_TYPE: ${{ github.event.inputs.package_type }}
+      ANDROID_SDK: ${{ github.event.inputs.android_sdk }}
+      INCREMENTAL: ${{ github.event.inputs.incremental }}
+      DEVICE_MODEL: ${{ github.event.inputs.device_model }}
+      DEVICE_FINGERPRINT: ${{ github.event.inputs.device_fingerprint }}
+      BUILD_FINGERPRINT: ${{ github.event.inputs.build_fingerprint }}
+      BUILD_TYPE: ${{ github.event.inputs.build_type }}
+      BUILD_TAGS: ${{ github.event.inputs.build_tags }}
+      BUILD_ID_INPUT: ${{ github.event.inputs.build_id }}
+
+    steps:
+      - name: Validate Finish inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ -n "$RELEASE_TAG" ]] || { echo "::error::release_tag is required in Finish mode"; exit 1; }
+          [[ -n "$ROM_NAME" ]] || { echo "::error::rom_name is required in Finish mode"; exit 1; }
+          [[ -n "$ROM_VERSION" ]] || { echo "::error::rom_version is required in Finish mode"; exit 1; }
+          [[ -n "$PORTAL_TOKEN" ]] || { echo "::error::Add PORTAL_TOKEN secret with write access to magic4n/Portal"; exit 1; }
+          [[ "$ANDROID_VERSION" =~ ^[0-9]+$ ]] || { echo "::error::android_version must be numeric"; exit 1; }
+
+      - name: Install tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends xz-utils jq curl
+
+      - name: Download Build metadata and archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release download "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern "charoite-build-meta.json" \
+            --dir .
+          ARCHIVE_NAME="$(jq -r '.archive_name' charoite-build-meta.json)"
+          [[ -n "$ARCHIVE_NAME" && "$ARCHIVE_NAME" != "null" ]] || {
+            echo "::error::archive_name missing in charoite-build-meta.json"
+            exit 1
+          }
+          gh release download "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern "$ARCHIVE_NAME" \
+            --dir .
+          echo "ARCHIVE_NAME=$ARCHIVE_NAME" >> "$GITHUB_ENV"
+          echo "DRIVE_URL=$(jq -r '.drive_url' charoite-build-meta.json)" >> "$GITHUB_ENV"
+          echo "MD5=$(jq -r '.md5' charoite-build-meta.json)" >> "$GITHUB_ENV"
+          echo "SHA256=$(jq -r '.sha256' charoite-build-meta.json)" >> "$GITHUB_ENV"
+          echo "ARCHIVE_SIZE_HUMAN=$(jq -r '.archive_size_human' charoite-build-meta.json)" >> "$GITHUB_ENV"
+
+      - name: Verify archive and calculate raw image size
+        id: sizes
+        shell: bash
+        run: |
+          set -euo pipefail
+          ACTUAL_MD5="$(md5sum "$ARCHIVE_NAME" | awk '{print $1}')"
+          ACTUAL_SHA256="$(sha256sum "$ARCHIVE_NAME" | awk '{print $1}')"
+          [[ "$ACTUAL_MD5" == "$MD5" ]] || { echo "::error::MD5 mismatch"; exit 1; }
+          [[ "$ACTUAL_SHA256" == "$SHA256" ]] || { echo "::error::SHA256 mismatch"; exit 1; }
+
+          RAW_IMAGE_BYTES="$(tar -xJOf "$ARCHIVE_NAME" system/system.img | wc -c)"
+          RAW_IMAGE_SIZE="$(numfmt --to=iec-i --suffix=B "$RAW_IMAGE_BYTES")"
+          echo "raw_image_size=$RAW_IMAGE_SIZE" >> "$GITHUB_OUTPUT"
+          echo "RAW_IMAGE_SIZE=$RAW_IMAGE_SIZE" >> "$GITHUB_ENV"
+
+      - name: Generate Build ID and release links
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "$BUILD_ID_INPUT" || "$BUILD_ID_INPUT" == "AUTO" ]]; then
+            BUILD_ID="$(openssl rand -hex 4 | tr '[:lower:]' '[:upper:]')"
+          else
+            BUILD_ID="$BUILD_ID_INPUT"
+          fi
+          RELEASE_URL="https://github.com/$GITHUB_REPOSITORY/releases/tag/$RELEASE_TAG"
+          echo "BUILD_ID=$BUILD_ID" >> "$GITHUB_ENV"
+          echo "RELEASE_URL=$RELEASE_URL" >> "$GITHUB_ENV"
+
+      - name: Create Markdown release notes
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > release-notes.md <<EOF
+          # ${ROM_NAME} ${ROM_VERSION} — Charoite
+
+          **Device:** REDMI Note 15 Pro 4G (25100RA69G)  
+          **Android:** ${ANDROID_VERSION}  
+          **Package:** ${PACKAGE_TYPE}  
+          **Build date:** $(date -u +'%Y-%m-%d')
+
+          ## Info
+
+          - **Android version:** ${ANDROID_VERSION}
+          - **Android SDK:** ${ANDROID_SDK}
+          - **Incremental:** ${INCREMENTAL}
+          - **Device model:** ${DEVICE_MODEL}
+          - **Device codename:** charoite
+          - **Device manufacturer:** Xiaomi
+          - **Device brand:** Redmi
+          - **Device fingerprint:** ${DEVICE_FINGERPRINT}
+          - **Build fingerprint:** ${BUILD_FINGERPRINT}
+          - **Build type:** ${BUILD_TYPE}
+          - **Build tags:** ${BUILD_TAGS}
+          - **Build ID:** ${BUILD_ID}
+          - **Raw image size:** ${RAW_IMAGE_SIZE}
+          - **Archive size:** ${ARCHIVE_SIZE_HUMAN}
+
+          ## Downloads
+
+          - **Portal:** ${DRIVE_URL}
+          - **GitHub Release:** ${RELEASE_URL}
+          - **Archive:** \`${ARCHIVE_NAME}\`
+
+          ## Checksums
+
+          - **MD5:** \`${MD5}\`
+          - **SHA256:** \`${SHA256}\`
+
+          ## Included components
+
+          - GSI system image
+          - Charoite Fixes (if available in the selected build)
+          - APatch APK
+          - Magisk APK
+          - INSTALL.md
+          EOF
+
+      - name: Update GitHub Release description
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release edit "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "${ROM_NAME} ${ROM_VERSION} — Charoite Android ${ANDROID_VERSION}" \
+            --notes-file release-notes.md
+
+      - name: Download Portal HTML template
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 5 --retry-all-errors \
+            https://raw.githubusercontent.com/magic4n/Portal/main/TEMPLATES/BF/first.html \
+            -o first.html
+          for marker in \
+            abcdabcdaadgd versionromnamed 3333-12-31 fileexportsize \
+            MD5STRINGFINALLYARCHIVE SHA256STRINGFINALLYARCHIVE \
+            GDRIVELINKHERE GHRELEASELINKHERE; do
+            grep -Fq "$marker" first.html || {
+              echo "::error::Portal template marker not found: $marker"
+              exit 1
+            }
+          done
+
+      - name: Render Portal HTML
+        shell: bash
+        run: |
+          set -euo pipefail
+          export RELEASE_DATE="$(date -u +'%Y-%m-%d')"
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+
+          path = Path("first.html")
+          html = path.read_text(encoding="utf-8")
+          replacements = {
+              "abcdabcdaadgd": os.environ["ROM_NAME"],
+              "versionromnamed": os.environ["ROM_VERSION"],
+              "3333-12-31": os.environ["RELEASE_DATE"],
+              "fileexportsize": os.environ["ARCHIVE_SIZE_HUMAN"],
+              "MD5STRINGFINALLYARCHIVE": os.environ["MD5"],
+              "SHA256STRINGFINALLYARCHIVE": os.environ["SHA256"],
+              "GDRIVELINKHERE": os.environ["DRIVE_URL"],
+              "GHRELEASELINKHERE": os.environ["RELEASE_URL"],
+          }
+          for marker, value in replacements.items():
+              html = html.replace(json.dumps(marker), json.dumps(value, ensure_ascii=False))
+          for marker in replacements:
+              if marker in html:
+                  raise SystemExit(f"Unreplaced Portal marker: {marker}")
+          Path("portal-page.html").write_text(html, encoding="utf-8")
+          PY
+
+      - name: Upload one HTML file to magic4n/Portal
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROM_SLUG="$(python3 - <<'PY'
+          import os, re, unicodedata
+          s = unicodedata.normalize("NFKC", os.environ["ROM_SLUG_INPUT"]).strip().lower()
+          s = re.sub(r"[\s_]+", "-", s)
+          s = re.sub(r"[^\w.-]+", "-", s, flags=re.UNICODE)
+          s = re.sub(r"-{2,}", "-", s).strip("-.")
+          print(s)
+          PY
+          )"
+          PORTAL_FILE="${ROM_SLUG}-charoite-a${ANDROID_VERSION}-unofficial.html"
+          PORTAL_PATH="cloud/auto/$PORTAL_FILE"
+          API_URL="https://api.github.com/repos/magic4n/Portal/contents/$PORTAL_PATH"
+
+          CONTENT_B64="$(base64 -w 0 portal-page.html)"
+          MESSAGE="Auto-publish ${ROM_NAME} ${ROM_VERSION} for Charoite"
+
+          EXISTING="$(curl --silent --show-error \
+            -H "Authorization: Bearer $PORTAL_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "$API_URL?ref=main")"
+
+          SHA="$(jq -r '.sha // empty' <<< "$EXISTING")"
+          if [[ -n "$SHA" ]]; then
+            PAYLOAD="$(jq -n \
+              --arg message "$MESSAGE" \
+              --arg content "$CONTENT_B64" \
+              --arg sha "$SHA" \
+              --arg branch "main" \
+              '{message:$message, content:$content, sha:$sha, branch:$branch}')"
+          else
+            PAYLOAD="$(jq -n \
+              --arg message "$MESSAGE" \
+              --arg content "$CONTENT_B64" \
+              --arg branch "main" \
+              '{message:$message, content:$content, branch:$branch}')"
+          fi
+
+          RESPONSE="$(curl --fail-with-body --silent --show-error \
+            -X PUT \
+            -H "Authorization: Bearer $PORTAL_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "$API_URL" \
+            -d "$PAYLOAD")"
+
+          PAGE_URL="$(jq -r '.content.html_url // empty' <<< "$RESPONSE")"
+          [[ -n "$PAGE_URL" ]] || { echo "::error::Portal upload did not return a file URL"; exit 1; }
+
+          {
+            echo "## Charoite GSI — Finish"
+            echo ""
+            echo "- **Release:** $RELEASE_URL"
+            echo "- **Google Drive:** $DRIVE_URL"
+            echo "- **Portal HTML:** $PAGE_URL"
+            echo "- **Archive:** \`$ARCHIVE_NAME\`"
+            echo "- **MD5:** \`$MD5\`"
+            echo "- **SHA256:** \`$SHA256\`"
+          } >> "$GITHUB_STEP_SUMMARY"
