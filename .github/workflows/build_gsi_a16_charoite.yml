@@ -418,49 +418,32 @@ jobs:
         run: |
           set -euo pipefail
           cat > release-notes.md <<EOF
-          # ${ROM_NAME} ${ROM_VERSION} — Charoite
+          **${ROM_NAME} ${ROM_VERSION}**
+          GSI build for ${DEVICE_MODEL} (Charoite)
 
-          **Device:** ${DEVICE_MODEL}  
-          **Android:** ${ANDROID_VERSION}  
-          **Package:** ${PACKAGE_TYPE}  
-          **Build date:** $(date -u +'%Y-%m-%d')
+          **Info:**
+          ```
+          Android version: ${ANDROID_VERSION}
+          Android SDK: ${ANDROID_SDK}
+          Incremental: ${INCREMENTAL}
+          Device model: ${DEVICE_MODEL}
+          Device codename: charoite
+          Device manufacturer: Xiaomi
+          Device brand: Redmi
+          Device fingerprint: ${DEVICE_FINGERPRINT}
+          Build fingerprint: ${BUILD_FINGERPRINT}
+          Build type: ${BUILD_TYPE}
+          Build tags: ${BUILD_TAGS}
+          Build ID: ${BUILD_ID}
+          Raw image size: ${RAW_IMAGE_SIZE}
+          ```
 
-          ## Info
+          **Notes:**
+          - Unofficial GSI build for Charoite
+          - Charoite Fixes v2.0 included when available
+          - APatch and Magisk APKs included
 
-          - **Android version:** ${ANDROID_VERSION}
-          - **Android SDK:** ${ANDROID_SDK}
-          - **Incremental:** ${INCREMENTAL}
-          - **Device model:** ${DEVICE_MODEL}
-          - **Device codename:** charoite
-          - **Device manufacturer:** Xiaomi
-          - **Device brand:** Redmi
-          - **Device fingerprint:** ${DEVICE_FINGERPRINT}
-          - **Build fingerprint:** ${BUILD_FINGERPRINT}
-          - **Build type:** ${BUILD_TYPE}
-          - **Build tags:** ${BUILD_TAGS}
-          - **Build ID:** ${BUILD_ID}
-          - **Raw image size:** ${RAW_IMAGE_SIZE}
-          - **Archive size:** ${ARCHIVE_SIZE_HUMAN}
-
-          ## Downloads
-
-          - **Portal:** ${PORTAL_URL}
-          - **Google Drive:** ${DRIVE_URL}
-          - **GitHub Release:** ${RELEASE_URL}
-          - **Archive:** \`${ARCHIVE_NAME}\`
-
-          ## Checksums
-
-          - **MD5:** \`${MD5}\`
-          - **SHA256:** \`${SHA256}\`
-
-          ## Included components
-
-          - GSI system image
-          - Charoite Fixes (if available in the selected build)
-          - APatch APK
-          - Magisk APK
-          - INSTALL.md
+          **Download:** [LunaOSS Portal](${PORTAL_URL})
           EOF
 
       - name: Update GitHub Release description
