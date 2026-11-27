@@ -1,61 +1,46 @@
-name: Charoite GSI Builder
+name: Charoite GSI — One-Run Builder
 
 on:
   workflow_dispatch:
     inputs:
-      mode:
-        description: "Что выполнить"
-        type: choice
-        required: true
-        default: build
-        options:
-          - build
-          - finish
-
       rom_slug:
-        description: "Короткое имя ROM, например crdroid"
+        description: "Short ROM identifier, for example crdroid"
         type: string
         required: true
         default: crdroid
 
       android_version:
-        description: "Версия Android (для имени архива), например 16"
+        description: "Android version used in the archive filename, for example 16"
         type: string
         required: true
         default: "16"
 
       firmware_url:
-        description: "Прямая ссылка на GSI .img.xz (используется в Build)"
+        description: "Direct URL to the GSI .img.xz file"
         type: string
         required: false
         default: "https://github.com/Doze-off/AyakaUI_GSI/releases/download/2026-08-16/AyakaUI-16.2-GSI_treble_arm64-ab-GAPPS-20260816.img.xz"
 
       md_file_url:
-        description: "Прямая ссылка на INSTALL.md (используется в Build)"
+        description: "Direct URL to the installation instructions file"
         type: string
         required: false
         default: "https://raw.githubusercontent.com/Doze-off/AyakaUI_GSI/main/README.md"
 
-      release_tag:
-        description: "Тег релиза для Finish (скопировать из результата Build)"
-        type: string
-        required: false
-        default: ""
-
       rom_name:
-        description: "Полное название прошивки для Finish, например crDroid"
+        description: "Full ROM name, for example crDroid"
         type: string
-        required: false
+        required: true
         default: ""
 
       rom_version:
-        description: "Версия ROM для Finish, например v12.12"
+        description: "ROM version, for example v12.12"
         type: string
-        required: false
+        required: true
         default: ""
 
       package_type:
-        description: "Вариант сборки"
+        description: "Package variant"
         type: choice
         required: false
         default: gapps
@@ -77,7 +62,7 @@ on:
         default: "unknown"
 
       device_model:
-        description: "Полное название и модель устройства"
+        description: "Full device name and model"
         type: string
         required: false
         default: "REDMI Note 15 Pro 4G (25100RA69G)"
@@ -107,7 +92,7 @@ on:
         default: "release-keys"
 
       build_id:
-        description: "Build ID (AUTO = случайный идентификатор)"
+        description: "Build ID (AUTO generates a random identifier)"
         type: string
         required: false
         default: "AUTO"
@@ -116,14 +101,13 @@ permissions:
   contents: write
 
 concurrency:
-  group: charoite-gsi-${{ github.event.inputs.mode }}-${{ github.run_id }}
+  group: charoite-gsi-${{ github.run_id }}
   cancel-in-progress: false
 
 jobs:
   build:
-    if: ${{ github.event.inputs.mode == 'build' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    timeout-minutes: 240
 
     env:
       ROM_SLUG_INPUT: ${{ github.event.inputs.rom_slug }}
@@ -131,10 +115,19 @@ jobs:
       FIRMWARE_URL: ${{ github.event.inputs.firmware_url }}
       MD_FILE_URL: ${{ github.event.inputs.md_file_url }}
       RCLONE_CONFIG_BASE64: ${{ secrets.RCLONE_CONFIG_BASE64 }}
-
-    outputs:
-      archive_name: ${{ steps.meta.outputs.archive_name }}
-      release_tag: ${{ steps.meta.outputs.release_tag }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      PORTAL_TOKEN: ${{ secrets.PORTAL_TOKEN }}
+      ROM_NAME: ${{ github.event.inputs.rom_name }}
+      ROM_VERSION: ${{ github.event.inputs.rom_version }}
+      PACKAGE_TYPE: ${{ github.event.inputs.package_type }}
+      ANDROID_SDK: ${{ github.event.inputs.android_sdk }}
+      INCREMENTAL: ${{ github.event.inputs.incremental }}
+      DEVICE_MODEL: ${{ github.event.inputs.device_model }}
+      DEVICE_FINGERPRINT: ${{ github.event.inputs.device_fingerprint }}
+      BUILD_FINGERPRINT: ${{ github.event.inputs.build_fingerprint }}
+      BUILD_TYPE: ${{ github.event.inputs.build_type }}
+      BUILD_TAGS: ${{ github.event.inputs.build_tags }}
+      BUILD_ID_INPUT: ${{ github.event.inputs.build_id }}
 
     steps:
       - name: Checkout repository
@@ -152,15 +145,23 @@ jobs:
           set -euo pipefail
 
           if [[ -z "${ROM_SLUG_INPUT//[[:space:]]/}" ]]; then
-            echo "::error::ROM name cannot be empty"
+            echo "::error::The ROM identifier cannot be empty"
             exit 1
           fi
           if [[ ! "$ANDROID_VERSION" =~ ^[0-9]+$ ]]; then
-            echo "::error::Android version must contain digits only (example: 16)"
+            echo "::error::Android version must contain digits only (for example, 16)"
             exit 1
           fi
           if [[ -z "$FIRMWARE_URL" || -z "$MD_FILE_URL" ]]; then
-            echo "::error::firmware_url and md_file_url are required in Build mode"
+            echo "::error::firmware_url and md_file_url are required"
+            exit 1
+          fi
+          if [[ -z "$ROM_NAME" || -z "$ROM_VERSION" ]]; then
+            echo "::error::rom_name and rom_version are required"
+            exit 1
+          fi
+          if [[ -z "$PORTAL_TOKEN" ]]; then
+            echo "::error::Add a PORTAL_TOKEN secret with write access to magic4n/Portal"
             exit 1
           fi
 
@@ -178,7 +179,7 @@ jobs:
 
           BUILD_DATE="$(date -u +'%Y%m%d')"
           ARCHIVE_NAME="${ROM_SLUG}-charoite-a${ANDROID_VERSION}-unofficial.tar.xz"
-          RELEASE_TAG="${ROM_SLUG}-charoite-${BUILD_DATE}-${GITHUB_RUN_NUMBER}"
+          RELEASE_TAG="${ROM_SLUG}-charoite-${BUILD_DATE}-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}"
 
           echo "rom_slug=$ROM_SLUG" >> "$GITHUB_OUTPUT"
           echo "archive_name=$ARCHIVE_NAME" >> "$GITHUB_OUTPUT"
@@ -203,28 +204,25 @@ jobs:
             "$MD_FILE_URL" -o work/package/INSTALL.md
           test -s work/package/INSTALL.md
 
-      - name: Download latest Charoite Fixes (optional)
+      - name: Download Charoite Fixes v2.0
         id: fixes
         shell: bash
         run: |
           set -euo pipefail
-          API="https://api.github.com/repos/magic4n/charoite-gsi-fixes/releases/latest"
-          JSON="$(curl --fail --location --retry 5 --retry-all-errors "$API")"
-          ASSET_URL="$(jq -r '[.assets[] | select(.name | test("^charoite_fixes.*\\.zip$"; "i"))] | sort_by(.created_at) | last | .browser_download_url // empty' <<< "$JSON")"
-          ASSET_NAME="$(jq -r '[.assets[] | select(.name | test("^charoite_fixes.*\\.zip$"; "i"))] | sort_by(.created_at) | last | .name // empty' <<< "$JSON")"
+          ASSET_URL="https://github.com/magic4n/charoite-gsi-fixes/releases/download/v2.0/charoite_fixes_module_v2.zip"
+          ASSET_NAME="charoite_fixes_module_v2.zip"
 
-          if [[ -z "$ASSET_URL" ]]; then
-            echo "::warning::No charoite_fixes ZIP asset found in latest stable release. Continuing without Fixes."
+          if curl --fail --location --retry 5 --retry-all-errors --retry-delay 3 "$ASSET_URL" \
+            -o "work/package/fixes/$ASSET_NAME"; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+            echo "asset_name=$ASSET_NAME" >> "$GITHUB_OUTPUT"
+            echo "release_url=https://github.com/magic4n/charoite-gsi-fixes/releases/tag/v2.0" >> "$GITHUB_OUTPUT"
+            echo "release_tag=v2.0" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::Could not download Charoite Fixes v2.0. Continuing without the fixes module."
+            rm -f "work/package/fixes/$ASSET_NAME"
             echo "available=false" >> "$GITHUB_OUTPUT"
-            exit 0
           fi
-
-          curl --fail --location --retry 5 --retry-all-errors "$ASSET_URL" \
-            -o "work/package/fixes/$ASSET_NAME"
-          echo "available=true" >> "$GITHUB_OUTPUT"
-          echo "asset_name=$ASSET_NAME" >> "$GITHUB_OUTPUT"
-          echo "release_url=$(jq -r '.html_url' <<< "$JSON")" >> "$GITHUB_OUTPUT"
-          echo "release_tag=$(jq -r '.tag_name' <<< "$JSON")" >> "$GITHUB_OUTPUT"
 
       - name: Download latest stable APatch APK
         shell: bash
@@ -234,7 +232,7 @@ jobs:
             https://api.github.com/repos/bmax121/APatch/releases/latest)"
           ASSET_URL="$(jq -r '[.assets[] | select(.name | endswith(".apk"))] | sort_by(.name) | last | .browser_download_url // empty' <<< "$JSON")"
           ASSET_NAME="$(jq -r '[.assets[] | select(.name | endswith(".apk"))] | sort_by(.name) | last | .name // empty' <<< "$JSON")"
-          [[ -n "$ASSET_URL" ]] || { echo "::error::No APK asset found in latest stable APatch release"; exit 1; }
+          [[ -n "$ASSET_URL" ]] || { echo "::error::No APK asset was found in the latest stable APatch release"; exit 1; }
           curl --fail --location --retry 5 --retry-all-errors "$ASSET_URL" \
             -o "work/package/root/$ASSET_NAME"
           echo "APATCH_VERSION=$(jq -r '.tag_name' <<< "$JSON")" >> "$GITHUB_ENV"
@@ -248,7 +246,7 @@ jobs:
             https://api.github.com/repos/topjohnwu/Magisk/releases/latest)"
           ASSET_URL="$(jq -r '[.assets[] | select(.name | test("^Magisk-.*\\.apk$"; "i"))] | first | .browser_download_url // empty' <<< "$JSON")"
           ASSET_NAME="$(jq -r '[.assets[] | select(.name | test("^Magisk-.*\\.apk$"; "i"))] | first | .name // empty' <<< "$JSON")"
-          [[ -n "$ASSET_URL" ]] || { echo "::error::No Magisk-*.apk asset found in latest stable Magisk release"; exit 1; }
+          [[ -n "$ASSET_URL" ]] || { echo "::error::No Magisk-*.apk asset was found in the latest stable Magisk release"; exit 1; }
           curl --fail --location --retry 5 --retry-all-errors "$ASSET_URL" \
             -o "work/package/root/$ASSET_NAME"
           echo "MAGISK_VERSION=$(jq -r '.tag_name' <<< "$JSON")" >> "$GITHUB_ENV"
@@ -299,7 +297,7 @@ jobs:
           printf '%s' "$RCLONE_CONFIG_BASE64" | base64 --decode > "$HOME/.config/rclone/rclone.conf"
           chmod 600 "$HOME/.config/rclone/rclone.conf"
           rclone listremotes | grep -Fx '24:' >/dev/null || {
-            echo "::error::rclone remote '24:' was not found in RCLONE_CONFIG_BASE64"
+            echo "::error::The rclone remote '24:' was not found in RCLONE_CONFIG_BASE64"
             exit 1
           }
 
@@ -376,89 +374,12 @@ jobs:
             Magisk: `${{ env.MAGISK_VERSION }}`
             Fixes: `${{ steps.fixes.outputs.release_tag || 'not found; build continued without Fixes' }}`
 
-            Run this workflow with mode **Finish** to publish the full ROM information and Portal page.
+            The complete ROM information and Portal page are published automatically in this workflow run.
           draft: false
           prerelease: false
           fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build summary
-        if: always()
-        shell: bash
-        run: |
-          {
-            echo "## Charoite GSI — Build"
-            echo ""
-            echo "- **Archive:** \`${ARCHIVE_NAME:-not created}\`"
-            echo "- **Release tag:** \`${RELEASE_TAG:-not created}\`"
-            echo "- **Google Drive folder:** \`GSI/4pda/charoite/roms-4-g\`"
-            if [[ -n "${DRIVE_URL:-}" ]]; then echo "- **Google Drive:** $DRIVE_URL"; fi
-            if [[ -n "${MD5:-}" ]]; then echo "- **MD5:** \`$MD5\`"; fi
-            if [[ -n "${SHA256:-}" ]]; then echo "- **SHA256:** \`$SHA256\`"; fi
-          } >> "$GITHUB_STEP_SUMMARY"
-
-  finish:
-    if: ${{ github.event.inputs.mode == 'finish' }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-
-    env:
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      PORTAL_TOKEN: ${{ secrets.PORTAL_TOKEN }}
-      RELEASE_TAG: ${{ github.event.inputs.release_tag }}
-      ROM_SLUG_INPUT: ${{ github.event.inputs.rom_slug }}
-      ANDROID_VERSION: ${{ github.event.inputs.android_version }}
-      ROM_NAME: ${{ github.event.inputs.rom_name }}
-      ROM_VERSION: ${{ github.event.inputs.rom_version }}
-      PACKAGE_TYPE: ${{ github.event.inputs.package_type }}
-      ANDROID_SDK: ${{ github.event.inputs.android_sdk }}
-      INCREMENTAL: ${{ github.event.inputs.incremental }}
-      DEVICE_MODEL: ${{ github.event.inputs.device_model }}
-      DEVICE_FINGERPRINT: ${{ github.event.inputs.device_fingerprint }}
-      BUILD_FINGERPRINT: ${{ github.event.inputs.build_fingerprint }}
-      BUILD_TYPE: ${{ github.event.inputs.build_type }}
-      BUILD_TAGS: ${{ github.event.inputs.build_tags }}
-      BUILD_ID_INPUT: ${{ github.event.inputs.build_id }}
-
-    steps:
-      - name: Validate Finish inputs
-        shell: bash
-        run: |
-          set -euo pipefail
-          [[ -n "$RELEASE_TAG" ]] || { echo "::error::release_tag is required in Finish mode"; exit 1; }
-          [[ -n "$ROM_NAME" ]] || { echo "::error::rom_name is required in Finish mode"; exit 1; }
-          [[ -n "$ROM_VERSION" ]] || { echo "::error::rom_version is required in Finish mode"; exit 1; }
-          [[ -n "$PORTAL_TOKEN" ]] || { echo "::error::Add PORTAL_TOKEN secret with write access to magic4n/Portal"; exit 1; }
-          [[ "$ANDROID_VERSION" =~ ^[0-9]+$ ]] || { echo "::error::android_version must be numeric"; exit 1; }
-
-      - name: Install tools
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends xz-utils jq curl
-
-      - name: Download Build metadata and archive
-        shell: bash
-        run: |
-          set -euo pipefail
-          gh release download "$RELEASE_TAG" \
-            --repo "$GITHUB_REPOSITORY" \
-            --pattern "charoite-build-meta.json" \
-            --dir .
-          ARCHIVE_NAME="$(jq -r '.archive_name' charoite-build-meta.json)"
-          [[ -n "$ARCHIVE_NAME" && "$ARCHIVE_NAME" != "null" ]] || {
-            echo "::error::archive_name missing in charoite-build-meta.json"
-            exit 1
-          }
-          gh release download "$RELEASE_TAG" \
-            --repo "$GITHUB_REPOSITORY" \
-            --pattern "$ARCHIVE_NAME" \
-            --dir .
-          echo "ARCHIVE_NAME=$ARCHIVE_NAME" >> "$GITHUB_ENV"
-          echo "DRIVE_URL=$(jq -r '.drive_url' charoite-build-meta.json)" >> "$GITHUB_ENV"
-          echo "MD5=$(jq -r '.md5' charoite-build-meta.json)" >> "$GITHUB_ENV"
-          echo "SHA256=$(jq -r '.sha256' charoite-build-meta.json)" >> "$GITHUB_ENV"
-          echo "ARCHIVE_SIZE_HUMAN=$(jq -r '.archive_size_human' charoite-build-meta.json)" >> "$GITHUB_ENV"
 
       - name: Verify archive and calculate raw image size
         id: sizes
@@ -467,8 +388,8 @@ jobs:
           set -euo pipefail
           ACTUAL_MD5="$(md5sum "$ARCHIVE_NAME" | awk '{print $1}')"
           ACTUAL_SHA256="$(sha256sum "$ARCHIVE_NAME" | awk '{print $1}')"
-          [[ "$ACTUAL_MD5" == "$MD5" ]] || { echo "::error::MD5 mismatch"; exit 1; }
-          [[ "$ACTUAL_SHA256" == "$SHA256" ]] || { echo "::error::SHA256 mismatch"; exit 1; }
+          [[ "$ACTUAL_MD5" == "$MD5" ]] || { echo "::error::MD5 checksum mismatch"; exit 1; }
+          [[ "$ACTUAL_SHA256" == "$SHA256" ]] || { echo "::error::SHA256 checksum mismatch"; exit 1; }
 
           RAW_IMAGE_BYTES="$(tar -xJOf "$ARCHIVE_NAME" system/system.img | wc -c)"
           RAW_IMAGE_SIZE="$(numfmt --to=iec-i --suffix=B "$RAW_IMAGE_BYTES")"
@@ -495,7 +416,7 @@ jobs:
           cat > release-notes.md <<EOF
           # ${ROM_NAME} ${ROM_VERSION} — Charoite
 
-          **Device:** REDMI Note 15 Pro 4G (25100RA69G)  
+          **Device:** ${DEVICE_MODEL}  
           **Android:** ${ANDROID_VERSION}  
           **Package:** ${PACKAGE_TYPE}  
           **Build date:** $(date -u +'%Y-%m-%d')
@@ -585,7 +506,7 @@ jobs:
               "GHRELEASELINKHERE": os.environ["RELEASE_URL"],
           }
           for marker, value in replacements.items():
-              html = html.replace(json.dumps(marker), json.dumps(value, ensure_ascii=False))
+              html = html.replace(marker, value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;"))
           for marker in replacements:
               if marker in html:
                   raise SystemExit(f"Unreplaced Portal marker: {marker}")
@@ -593,6 +514,7 @@ jobs:
           PY
 
       - name: Upload one HTML file to magic4n/Portal
+        id: portal
         shell: bash
         run: |
           set -euo pipefail
@@ -644,13 +566,22 @@ jobs:
           PAGE_URL="$(jq -r '.content.html_url // empty' <<< "$RESPONSE")"
           [[ -n "$PAGE_URL" ]] || { echo "::error::Portal upload did not return a file URL"; exit 1; }
 
+          echo "page_url=$PAGE_URL" >> "$GITHUB_OUTPUT"
+      - name: Final workflow summary
+        if: always()
+        env:
+          PORTAL_PAGE_URL: ${{ steps.portal.outputs.page_url }}
+        shell: bash
+        run: |
           {
-            echo "## Charoite GSI — Finish"
+            echo "## Charoite GSI — Complete build and publication"
             echo ""
-            echo "- **Release:** $RELEASE_URL"
-            echo "- **Google Drive:** $DRIVE_URL"
-            echo "- **Portal HTML:** $PAGE_URL"
-            echo "- **Archive:** \`$ARCHIVE_NAME\`"
-            echo "- **MD5:** \`$MD5\`"
-            echo "- **SHA256:** \`$SHA256\`"
+            echo "- **ROM:** ${ROM_NAME:-unknown} ${ROM_VERSION:-}"
+            echo "- **Archive:** \`${ARCHIVE_NAME:-not created}\`"
+            echo "- **Release tag:** \`${RELEASE_TAG:-not created}\`"
+            echo "- **Google Drive:** ${DRIVE_URL:-not uploaded}"
+            echo "- **GitHub Release:** ${RELEASE_URL:-not published}"
+            echo "- **Portal HTML:** ${PORTAL_PAGE_URL:-not published}"
+            echo "- **MD5:** \`${MD5:-not calculated}\`"
+            echo "- **SHA256:** \`${SHA256:-not calculated}\`"
           } >> "$GITHUB_STEP_SUMMARY"
