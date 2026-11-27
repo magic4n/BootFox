@@ -406,8 +406,12 @@ jobs:
             BUILD_ID="$BUILD_ID_INPUT"
           fi
           RELEASE_URL="https://github.com/$GITHUB_REPOSITORY/releases/tag/$RELEASE_TAG"
+          PORTAL_FILE="${ROM_SLUG}-charoite-a${ANDROID_VERSION}-unofficial.html"
+          PORTAL_URL="https://portal.lunaoss.tech/cloud/auto/${PORTAL_FILE}"
           echo "BUILD_ID=$BUILD_ID" >> "$GITHUB_ENV"
           echo "RELEASE_URL=$RELEASE_URL" >> "$GITHUB_ENV"
+          echo "PORTAL_FILE=$PORTAL_FILE" >> "$GITHUB_ENV"
+          echo "PORTAL_URL=$PORTAL_URL" >> "$GITHUB_ENV"
 
       - name: Create Markdown release notes
         shell: bash
@@ -440,7 +444,8 @@ jobs:
 
           ## Downloads
 
-          - **Portal:** ${DRIVE_URL}
+          - **Portal:** ${PORTAL_URL}
+          - **Google Drive:** ${DRIVE_URL}
           - **GitHub Release:** ${RELEASE_URL}
           - **Archive:** \`${ARCHIVE_NAME}\`
 
@@ -527,7 +532,6 @@ jobs:
           print(s)
           PY
           )"
-          PORTAL_FILE="${ROM_SLUG}-charoite-a${ANDROID_VERSION}-unofficial.html"
           PORTAL_PATH="cloud/auto/$PORTAL_FILE"
           API_URL="https://api.github.com/repos/magic4n/Portal/contents/$PORTAL_PATH"
 
@@ -563,9 +567,9 @@ jobs:
             "$API_URL" \
             -d "$PAYLOAD")"
 
-          PAGE_URL="$(jq -r '.content.html_url // empty' <<< "$RESPONSE")"
-          [[ -n "$PAGE_URL" ]] || { echo "::error::Portal upload did not return a file URL"; exit 1; }
-
+          # The public Portal URL is served by portal.lunaoss.tech, not GitHub's
+          # repository HTML view returned by the Contents API.
+          PAGE_URL="$PORTAL_URL"
           echo "page_url=$PAGE_URL" >> "$GITHUB_OUTPUT"
       - name: Final workflow summary
         if: always()
